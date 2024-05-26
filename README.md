@@ -172,6 +172,14 @@ So as we can see all those transactions didn't affect the inflation rate change
 
 # 4. Change inflation mechanism to custom
 
+Let's change logic to follow the law:
+```
+inflationRateChangePerYear = - bondedRatioWithBurnedCorrection * params.InflationRateChange
+```
+where `bondedRatioWithBurnedCorrection` defined as:
+```
+bondedRatioWithBurnedCorrection = (totalBondedStakingTokens + totalBurned) / (totalStakingSupply + totalBurned)
+```
 
 First of all, we have to keep track of burned amount. To do that we'll add a new key `BurnedKey` in `x/bank/types/keys.go` and a new field `Burned` in `x/bank/keeper/view.go`
 
