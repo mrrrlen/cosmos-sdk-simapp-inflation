@@ -127,20 +127,24 @@ Here inflation rate change returned back to `0.000000020597254005` as it was aft
 
 # 3. Change inflation mechanism to be static
 
-Firstly, let's reset data to initial state:
+To change that we can simply return the previous inflation as a new one in `x/mint/types/minter.go`
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/37d0a088-6a42-4366-b93a-b8ca9f19f8d4)
+
+Now let's reset data to initial state:
 ```
 ./simd comet unsafe-reset-all
 ```
 ![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/247776d3-d5e6-429d-92aa-9850b940b298)
 
-Now we'll rebuild SimApp
+Rebuild SimApp
 ```
 cd ../
 make build
 ```
 ![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/dd8bdd4d-596c-41d2-b528-73bddf443f5b)
 
-Now we can launch SimApp again
+So now we can launch SimApp again
 
 ![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/a2645062-6b08-4cf7-b276-e60a75bde9ba)
 
@@ -148,7 +152,7 @@ Let's measure the inflation rate as we did before
 
 ![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/416454ce-341a-43dd-8a3c-649913a1dc0c)
 
-Now we can see that it stays on it's initial value - 0.13
+Now we can see that it stays on it's initial value `0.13`
 
 Let's do the same transactions as we did before and see if inflation does change
 
@@ -165,4 +169,85 @@ Burning `5000000000000000000000000stake`
 ![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/b73fdbda-0386-4575-bc37-de935fed1035)
 
 So as we can see all those transactions didn't affect the inflation rate change
+
+# 4. Change inflation mechanism to custom
+
+
+First of all, we have to keep track of burned amount. To do that we'll add a new key `BurnedKey` in `x/bank/types/keys.go` and a new field `Burned` in `x/bank/keeper/view.go`
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/bfe4dd8f-c95c-42aa-bb0a-2f02096a0575)
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/e4267647-7064-4961-8965-9c8cffb00986)
+
+Let's add methods for setting and getting burned coins in `x/bank/keeper/keeper.go`:
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/45feca00-0b34-40c9-8e84-841103a31a81)
+
+In the same file let's modify method `BurnCoins` to take into account burned coins:
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/070da875-d9ff-478c-a686-936ebed276ab)
+
+To use `GetBurn` in staking keeper let's add this method to interface of banking keeper in `x/staking/types/expected_keepers.go`
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/efc7220b-55d6-4317-921b-a35c84848e42)
+
+Now we can define our method for bondingRatioWithBurnedCorrection calculation in `x/staking/keeper/pool.go`:
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/65bb1b41-bf0d-4647-99fb-eb21690d0742)
+
+To use `BondedRatioWithBurnedCorrection` in mint keeper let's add this method to interface of staking keeper in `x/mint/types/expected_keepers.go`
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/84bf08d5-d1f4-445f-9eea-12d7c39f92b8)
+
+In mint keeper let's create alias for calling `BondedRatioWithBurnedCorrection` in `x/mint/keeper/keeper.go`
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/b1b95be3-19f8-4480-be2c-9fd828e31842)
+
+Now we can call calcualtion of `bondedRatioWithBurnedCorrection` and pass it to inflation calculation function in `x/mint/keeper/abci.go`:
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/1d22c449-7d3e-43f6-8cce-850f0a52622b)
+
+In `x/mint/types/genesis.go` let's change the declaration of inflation function to point out that it accepts `bondedRatioWithBurnedCorrection` as its parameter:
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/3d22abed-ad61-4291-911c-3e10d93db412)
+
+Finally in `x/mint/types/minter.go` we'll change updating of inflation rate according to our logic (capping at min and max inflation rates left intact)
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/49b1f92f-1963-45c1-826b-9bc8c6426515)
+
+
+Now we can rebuild our app
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/ee193b82-3ee1-4a3c-91f8-fe3c4aacf2b7)
+
+Starting app as usual
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/ffac1f4e-face-4736-9bdc-90fa6e81a03a)
+
+Inflation measures before transactions
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/6f648ce4-1bef-4fc8-afc8-84f94054cb4a)
+
+Delegating `1000000000000000000stake` to validator. 
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/3661f489-b9d4-4893-aa80-081ee2f6ab7d)
+
+After delegation the inflation rate change became `-0.000000000000002060`
+
+Here bondingRationWithBurnCorrection approximately equal to `0.0000001` (as it was before cause we haven't burnt anything yet)
+So inflation rate change is `-0.0000001 * 0.13 / 6311520 ≈ -0.000000000000002060`
+
+Unbonding `500000000000000000stake` (half of bonded)
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/5580e83b-18f4-4cd2-99a0-f214628bc5a9)
+
+
+After that inflation rate change became `-0.000000000000001030`. It halved as expected
+
+Burning half of genesis supply
+
+![image](https://github.com/mrrrlen/cosmos-sdk-simapp-inflation/assets/31540338/2408b9bd-cf8c-44af-86a8-34c0b89eea17)
+
+
+Here we can see that change became much bigger as it was expected. Now the change in total supply have a bigger impact (numberator became >> 0 in calculation of `bondedRatioWithBurnedCorrection`) that's why inflation rate change differs (`-0.000000010298624478` at 25th block, `-0.000000010298624372` at 26th block)
 
